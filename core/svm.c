@@ -172,14 +172,19 @@ static VOID SetupControls(VCPU* V)
 
     RtlZeroMemory(c, sizeof(*c));
 
-    c->GuestAsid = 1;
+    // PHASE 1.3: Assign unique ASID to target process
+    c->GuestAsid = 1;  // Default ASID, will be switched for target process
     c->VmcbClean = 0;
 
     c->Intercepts[SVM_INTERCEPT_WORD3] =
         SVM_INTERCEPT_CPUID |
-        SVM_INTERCEPT_HLT;
+        SVM_INTERCEPT_HLT |
+        SVM_INTERCEPT_RDTSC;  // PHASE 3.2: Enable RDTSC intercept
 
     c->Intercepts[SVM_INTERCEPT_WORD4] = SVM_INTERCEPT_VMMCALL;
+
+    // PHASE 3.3: Enable debug register intercepts
+    c->Intercepts[SVM_INTERCEPT_WORD0] = SVM_INTERCEPT_DR_ALL;
 
     c->MsrpmBasePa = V->MsrpmPa.QuadPart;
     c->IopmBasePa = V->IopmPa.QuadPart;
@@ -187,8 +192,8 @@ static VOID SetupControls(VCPU* V)
     c->NestedControl = SVM_NESTED_CTL_NP_ENABLE;
     c->NestedCr3 = V->Npt.Pml4Pa.QuadPart;
 
-   
-    c->TscOffset = V->CloakedTscOffset;
+    // PHASE 3.1: Initialize TSC offset for timing stealth
+    c->TscOffset = V->TscStealth.BaseOffset;
 }
 
 
@@ -207,6 +212,32 @@ NTSTATUS SvmInit(VCPU** Out)
         return HV_STATUS_ALLOC_VCPU;
 
     RtlZeroMemory(V, sizeof(*V));
+
+    // PHASE 1.1: Initialize process context tracking
+    V->ProcessContext.TargetCr3 = 0;
+    V->ProcessContext.TargetAsid = 0x2;  // PHASE 1.3: Hardcoded ASID for target
+    V->ProcessContext.MonitoringActive = FALSE;
+    V->ProcessContext.CurrentGuestCr3 = 0;
+
+    // PHASE 3.3: Initialize debug register masking
+    V->DebugRegs.Dr0 = 0;
+    V->DebugRegs.Dr1 = 0;
+    V->DebugRegs.Dr2 = 0;
+    V->DebugRegs.Dr3 = 0;
+    V->DebugRegs.Dr6 = 0;
+    V->DebugRegs.Dr7 = 0;
+    V->DebugRegs.Masked = TRUE;  // Enable masking by default
+
+    // PHASE 3.1: Initialize TSC stealth
+    V->TscStealth.BaseOffset = 0;
+    V->TscStealth.LastGuestTsc = 0;
+    V->TscStealth.AccumulatedOverhead = 0;
+    V->TscStealth.InterceptActive = TRUE;
+
+    // PHASE 3.6: Initialize mode tracking
+    V->ModeTracking.InKernelMode = FALSE;
+    V->ModeTracking.LastSyscallRip = 0;
+    V->ModeTracking.SyscallCount = 0;
 
     // PART 3.10: Initialize hypercall secret key
     V->HypercallSecretKey = 0xDEADBEEFCAFEBABEULL;

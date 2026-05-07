@@ -7,18 +7,36 @@
 #define PAGE_ALIGN(x) ((x) & ~0xFFFULL)
 #endif
 
-// PART 2.1: NPF Error Code Bits
+// PHASE 2.1: NPF Error Code Bits
 #define NPF_ERROR_PRESENT       (1ULL << 0)
 #define NPF_ERROR_WRITE         (1ULL << 1)
 #define NPF_ERROR_USER          (1ULL << 2)
 #define NPF_ERROR_RESERVED      (1ULL << 3)
 #define NPF_ERROR_INSTRUCTION   (1ULL << 4)
 
-// PART 1.6: Alignment Check
+// PHASE 1.6: Alignment Check
 #define IS_ALIGNED_4K(x) (((x) & 0xFFF) == 0)
+#define IS_ALIGNED_2M(x) (((x) & 0x1FFFFF) == 0)
 
-// PART 2.8: INVLPGA intrinsic declaration
+// PHASE 2.8: INVLPGA intrinsic declaration
 extern void __invlpga(void* VirtualAddress, UINT32 Asid);
+
+// PHASE 2.7: Memory Type Synchronization - Copy PAT settings
+static VOID NptSyncPatSettings(NPT_ENTRY* nptEntry, UINT64 guestPte)
+{
+    // Copy cache-related bits from guest PTE to NPT entry
+    // Bits: WriteThrough (3), CacheDisable (4)
+    nptEntry->WriteThrough = (guestPte >> 3) & 1;
+    nptEntry->CacheDisable = (guestPte >> 4) & 1;
+
+    // PAT bit (7) is also important for cache attributes
+    if (guestPte & (1ULL << 7))
+    {
+        // Guest uses PAT - ensure we don't conflict
+        // For now, just log it
+        DbgPrint("[NPT] Guest PTE uses PAT bit\n");
+    }
+}
 
 static NPT_ENTRY* NptAllocTable(PHYSICAL_ADDRESS* outPa)
 {
@@ -463,13 +481,13 @@ static UINT64 NptGetMaxPhysicalAddress()
 // PART 1: NPT SHADOW PAGING INFRASTRUCTURE
 // ============================================================================
 
-// PART 1.1: Shadow PT Allocation
-static NPT_ENTRY* NptAllocShadowPml4(PHYSICAL_ADDRESS* outPa)
+// PHASE 2.3: Shadow PT Allocation
+static NPT_ENTRY* NptAllocShadowPageTable(PHYSICAL_ADDRESS* outPa)
 {
     return NptAllocTable(outPa);
 }
 
-// PART 1.4: Shadow Page Tracking
+// PHASE 1.4: Shadow Page Tracking
 static SHADOW_PAGE_ENTRY* NptFindShadowPage(NPT_STATE* State, UINT64 Gpa)
 {
     PLIST_ENTRY entry = State->ShadowPageList.Flink;
@@ -485,7 +503,7 @@ static SHADOW_PAGE_ENTRY* NptFindShadowPage(NPT_STATE* State, UINT64 Gpa)
     return NULL;
 }
 
-// PART 1.5: Page Splitting Logic
+// PHASE 2.1: Page Splitting Logic - Split 2MB page into 512 4KB pages
 BOOLEAN NptSplitLargePage(NPT_STATE* State, UINT64 Gpa)
 {
     UINT64 level;
@@ -506,11 +524,17 @@ BOOLEAN NptSplitLargePage(NPT_STATE* State, UINT64 Gpa)
     UINT64 baseFrame = entry->PageFrame;
     UINT64 basePerms = entry->Value & 0xFFF;
     
+    // PHASE 2.7: Preserve cache attributes
+    BOOLEAN writeThrough = entry->WriteThrough;
+    BOOLEAN cacheDisable = entry->CacheDisable;
+    
     // Create 512 4KB entries
     for (ULONG i = 0; i < 512; i++)
     {
         pt[i].Value = ((baseFrame + i) << 12) | basePerms;
         pt[i].LargePage = 0;
+        pt[i].WriteThrough = writeThrough;
+        pt[i].CacheDisable = cacheDisable;
     }
     
     // Replace large page entry with PT pointer
@@ -522,7 +546,7 @@ BOOLEAN NptSplitLargePage(NPT_STATE* State, UINT64 Gpa)
     return TRUE;
 }
 
-// PART 1.8: CR3 Monitoring
+// PHASE 1.8: CR3 Monitoring
 VOID NptSetTargetProcess(NPT_STATE* State, UINT64 Cr3, UINT16 Asid)
 {
     State->TargetCr3 = Cr3 & ~0xFFFULL;
@@ -532,7 +556,7 @@ VOID NptSetTargetProcess(NPT_STATE* State, UINT64 Cr3, UINT16 Asid)
     DbgPrint("[NPT] Target process set: CR3=0x%llX ASID=%u\n", State->TargetCr3, Asid);
 }
 
-// PART 2.8: TLB Management
+// PHASE 2.4: TLB Management - High-performance wrapper
 VOID NptInvalidateTlb(UINT64 Gva, UINT16 Asid)
 {
     __invlpga((void*)Gva, Asid);
@@ -673,7 +697,7 @@ NTSTATUS NptShadowPageInstall(NPT_STATE* State, UINT64 Gpa, UINT64 OriginalHpa, 
     
     UINT64 gpaPage = Gpa & ~0xFFFULL;
     
-    // PART 1.5: Check if we need to split a large page
+    // PHASE 2.1: Check if we need to split a large page
     UINT64 level;
     NPT_ENTRY* entry = NptGetEntry(State, Gpa, &level);
     if (entry && entry->LargePage)
@@ -705,11 +729,17 @@ NTSTATUS NptShadowPageInstall(NPT_STATE* State, UINT64 Gpa, UINT64 OriginalHpa, 
     shadow->IsActive = TRUE;
     shadow->IsExecuteView = FALSE;
     
-    // PART 2.1: Set initial state to Read/Write but NX
+    // PHASE 2.7: Preserve cache attributes from original entry
+    BOOLEAN origWriteThrough = entry->WriteThrough;
+    BOOLEAN origCacheDisable = entry->CacheDisable;
+    
+    // PHASE 2.2: Set initial state to Read/Write but NX
     entry->PageFrame = shadow->OriginalHostPage >> 12;
     entry->Present = 1;
     entry->Write = 1;
     entry->Nx = 1;
+    entry->WriteThrough = origWriteThrough;
+    entry->CacheDisable = origCacheDisable;
     NptSetAccessDirtyBits(entry);
     
     // Add to tracking list
@@ -785,11 +815,16 @@ NTSTATUS NptInitialize(NPT_STATE* State)
     if (!State) return STATUS_INVALID_PARAMETER;
     RtlZeroMemory(State, sizeof(*State));
 
-    // PART 1.4: Initialize shadow page tracking
+    // PHASE 1.4: Initialize shadow page tracking
     InitializeListHead(&State->ShadowPageList);
     KeInitializeSpinLock(&State->ShadowPageLock);
     State->ShadowPageCount = 0;
     State->Cr3MonitorActive = FALSE;
+
+    // PHASE 2.6: Initialize hidden buffer (will be allocated on demand)
+    State->HiddenBuffer = NULL;
+    State->HiddenBufferPa.QuadPart = 0;
+    State->HiddenBufferSize = 0;
     
     // PART 1.10: Zero-init fake pages
     for (ULONG i = 0; i < 2; i++)
@@ -828,17 +863,17 @@ NTSTATUS NptInitialize(NPT_STATE* State)
     State->Pml4 = pml4;
     State->Pml4Pa = pml4Pa;
 
-    // PART 1.2: Allocate Shadow PML4 for Execute views
-    PHYSICAL_ADDRESS shadowPml4Pa;
-    NPT_ENTRY* shadowPml4 = NptAllocShadowPml4(&shadowPml4Pa);
-    if (!shadowPml4)
+    // PHASE 2.3: Allocate Shadow Page Table for Execute views (single page for now)
+    PHYSICAL_ADDRESS shadowPageTablePa;
+    NPT_ENTRY* shadowPageTable = NptAllocTable(&shadowPageTablePa);
+    if (!shadowPageTable)
     {
-        DbgPrint("SVM-HV: NPT Shadow PML4 alloc failed\n");
+        DbgPrint("SVM-HV: NPT Shadow Page Table alloc failed\n");
         return HV_STATUS_NPT_PML4;
     }
 
-    State->ShadowPml4 = shadowPml4;
-    State->ShadowPml4Pa = shadowPml4Pa;
+    State->ShadowPageTable = shadowPageTable;
+    State->ShadowPageTablePa = shadowPageTablePa;
 
     UINT64 mapLimit = NptGetMaxPhysicalAddress();
     if (!mapLimit)
@@ -885,8 +920,8 @@ NTSTATUS NptInitialize(NPT_STATE* State)
         }
     }
 
-    // PART 1.3: Copy identity mapping to Shadow PML4
-    RtlCopyMemory(shadowPml4, pml4, PAGE_SIZE);
+    // PHASE 2.3: Initialize shadow page table (will be populated on demand)
+    RtlZeroMemory(shadowPageTable, PAGE_SIZE);
 
     return STATUS_SUCCESS;
 }
@@ -899,12 +934,19 @@ VOID NptDestroy(NPT_STATE* State)
     if (!State)
         return;
 
-    // PART 4.7: Cleanup shadow pages
+    // PHASE 4.7: Cleanup shadow pages
     while (!IsListEmpty(&State->ShadowPageList))
     {
         PLIST_ENTRY entry = RemoveHeadList(&State->ShadowPageList);
         SHADOW_PAGE_ENTRY* shadow = CONTAINING_RECORD(entry, SHADOW_PAGE_ENTRY, ListEntry);
         ExFreePoolWithTag(shadow, SHADOW_POOL_TAG);
+    }
+
+    // PHASE 2.6: Free hidden buffer if allocated
+    if (State->HiddenBuffer)
+    {
+        MmFreeContiguousMemory(State->HiddenBuffer);
+        State->HiddenBuffer = NULL;
     }
 
     for (ULONG i = 0; i < 2; i++)
@@ -913,44 +955,10 @@ VOID NptDestroy(NPT_STATE* State)
             MmFreeContiguousMemory(State->FakePageVa[i]);
     }
 
-    // Free Shadow PML4 and its subtables
-    if (State->ShadowPml4)
+    // Free Shadow Page Table if allocated
+    if (State->ShadowPageTable)
     {
-        for (UINT64 pml4_i = 0; pml4_i < 512; pml4_i++)
-        {
-            if (!State->ShadowPml4[pml4_i].Present)
-                continue;
-
-            NPT_ENTRY* pdpt = NptResolveTableFromEntry(&State->ShadowPml4[pml4_i]);
-            if (!pdpt)
-                continue;
-
-            for (UINT64 pdpt_i = 0; pdpt_i < 512; pdpt_i++)
-            {
-                if (!pdpt[pdpt_i].Present || pdpt[pdpt_i].LargePage)
-                    continue;
-
-                NPT_ENTRY* pd = NptResolveTableFromEntry(&pdpt[pdpt_i]);
-                if (!pd)
-                    continue;
-
-                for (UINT64 pd_i = 0; pd_i < 512; pd_i++)
-                {
-                    if (!pd[pd_i].Present || pd[pd_i].LargePage)
-                        continue;
-
-                    NPT_ENTRY* pt = NptResolveTableFromEntry(&pd[pd_i]);
-                    if (pt)
-                        MmFreeContiguousMemory(pt);
-                }
-
-                MmFreeContiguousMemory(pd);
-            }
-
-            MmFreeContiguousMemory(pdpt);
-        }
-
-        MmFreeContiguousMemory(State->ShadowPml4);
+        MmFreeContiguousMemory(State->ShadowPageTable);
     }
 
     if (State->Pml4)

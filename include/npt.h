@@ -9,13 +9,16 @@
 #define PAGE_USER        (1ULL << 2)
 #define PAGE_NX          (1ULL << 63)
 
-// NPT Permission Constants (PART 1.7)
+// PHASE 2.2: NPT Permission Macros
 #define NPT_RWX          (PAGE_PRESENT | PAGE_WRITE)
+#define NPT_RX_ONLY      (PAGE_PRESENT)
+#define NPT_RW_ONLY      (PAGE_PRESENT | PAGE_WRITE | PAGE_NX)
 #define NPT_RW_NO_EXEC   (PAGE_PRESENT | PAGE_WRITE | PAGE_NX)
 #define NPT_EXEC_NO_RW   (PAGE_PRESENT)
 
-// Pool Tag for Shadow Paging (PART 1.9)
+// Pool Tag for Shadow Paging
 #define SHADOW_POOL_TAG  'SHPT'
+#define HIDDEN_POOL_TAG  'HDNP'
 
 typedef union _NPT_ENTRY
 {
@@ -65,21 +68,26 @@ typedef struct _NPT_STATE
     NPT_ENTRY* Pml4;
     PHYSICAL_ADDRESS Pml4Pa;
 
-    // Shadow PML4 for Execute Views (PART 1.2)
-    NPT_ENTRY* ShadowPml4;
-    PHYSICAL_ADDRESS ShadowPml4Pa;
+    // PHASE 2.3: Secondary NPT Pointer for Execute Views
+    NPT_ENTRY* ShadowPageTable;
+    PHYSICAL_ADDRESS ShadowPageTablePa;
 
     UINT64 ShadowCr3;
 
-    // Shadow Page Tracking List (PART 1.4)
+    // Shadow Page Tracking List
     LIST_ENTRY ShadowPageList;
     KSPIN_LOCK ShadowPageLock;
     ULONG ShadowPageCount;
 
-    // Target Process Tracking (PART 1.8)
+    // PHASE 1.1: Target Process Tracking
     UINT64 TargetCr3;
     UINT16 TargetAsid;
     BOOLEAN Cr3MonitorActive;
+
+    // PHASE 2.6: Hidden Memory Pool for Injected Code
+    PVOID HiddenBuffer;
+    PHYSICAL_ADDRESS HiddenBufferPa;
+    SIZE_T HiddenBufferSize;
 
     struct
     {
