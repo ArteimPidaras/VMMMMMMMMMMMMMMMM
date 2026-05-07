@@ -22,7 +22,7 @@ VOID HookDisableCr3Encryption();
 BOOLEAN HookNptHandleFault(VCPU* V, UINT64 faultingGpa);
 
 
-UINT64 HookVmmcallDispatch(VCPU* V, UINT64 code, UINT64 a1, UINT64 a2, UINT64 a3);
+UINT64 HookVmmcallDispatch(VCPU* V, UINT64 code, UINT64 a1, UINT64 a2, UINT64 a3, UINT64 secretKey);
 
 
 VOID HookIoIntercept(VCPU* V);

@@ -64,10 +64,6 @@
     <DriverTargetPlatform>Universal</DriverTargetPlatform>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
-  <ImportGroup Label="ExtensionSettings">
-    <Import Project="$(VCTargetsPath)\BuildCustomizations\marmasm.props" />
-    <Import Project="$(VCTargetsPath)\BuildCustomizations\masm.props" />
-  </ImportGroup>
   <ImportGroup Label="PropertySheets">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
@@ -134,18 +130,25 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\communication\communication.c" />
+    <ClCompile Include="src\communication\hypercall_attach.c" />
     <ClCompile Include="src\core\driver.c" />
+    <ClCompile Include="src\core\vmexit_handler_npt.c" />
     <ClCompile Include="src\memory\guest_mem.c" />
     <ClCompile Include="src\hooks\hooks.c" />
     <ClCompile Include="src\core\hypervisor.c" />
     <ClCompile Include="src\memory\layers.c" />
     <ClCompile Include="src\memory\npt.c" />
+    <ClCompile Include="src\memory\npt_view_switch.c" />
     <ClCompile Include="src\process\process_manager.c" />
+    <ClCompile Include="src\process\process_attach.c" />
     <ClCompile Include="src\interrupts\shadow_idt.c" />
     <ClCompile Include="src\core\smp.c" />
     <ClCompile Include="src\stealth\stealth.c" />
+    <ClCompile Include="src\stealth\anti_debug_shield.c" />
     <ClCompile Include="src\core\svm.c" />
     <ClCompile Include="src\core\translator.c" />
+    <ClCompile Include="src\injection\shellcode_payload.c" />
+    <ClCompile Include="src\injection\direct_inject.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\communication.h" />
@@ -154,14 +157,18 @@
     <ClInclude Include="include\layers.h" />
     <ClInclude Include="include\msr.h" />
     <ClInclude Include="include\process_manager.h" />
+    <ClInclude Include="include\process_attach.h" />
     <ClInclude Include="include\npt.h" />
+    <ClInclude Include="include\npt_view_switch.h" />
     <ClInclude Include="include\shadow_idt.h" />
     <ClInclude Include="include\smp.h" />
     <ClInclude Include="include\stealth.h" />
+    <ClInclude Include="include\anti_debug.h" />
     <ClInclude Include="include\translator.h" />
     <ClInclude Include="include\svm.h" />
     <ClInclude Include="include\vcpu.h" />
     <ClInclude Include="include\vmcb.h" />
+    <ClInclude Include="include\injection.h" />
   </ItemGroup>
   <ItemGroup>
     <MASM Include="asm\shadow_idt.asm">
@@ -171,8 +178,4 @@
     <MASM Include="asm\invlpga.asm" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
-  <ImportGroup Label="ExtensionTargets">
-    <Import Project="$(VCTargetsPath)\BuildCustomizations\marmasm.targets" />
-    <Import Project="$(VCTargetsPath)\BuildCustomizations\masm.targets" />
-  </ImportGroup>
 </Project>

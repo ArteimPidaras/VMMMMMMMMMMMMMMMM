@@ -1,18 +1,12 @@
-option casemap:none
+.CODE
 
-_TEXT SEGMENT ALIGN(16)
-
-; PART 2.8: INVLPGA implementation for TLB invalidation
-; void __invlpga(void* VirtualAddress, UINT32 Asid)
-PUBLIC __invlpga
+; void __invlpga(UINT64 VirtualAddress, UINT32 Asid)
+; Invalidate TLB entry for a specific virtual address and ASID
 __invlpga PROC
-    ; rcx = VirtualAddress
-    ; rdx = Asid
-    mov     rax, rcx
-    mov     ecx, edx
-    db      0Fh, 01h, 0DFh  ; invlpga rax, ecx
+    mov rax, rcx        ; VirtualAddress in RCX
+    mov ecx, edx        ; ASID in EDX
+    db 0Fh, 01h, 0DFh   ; INVLPGA opcode (not all assemblers support it)
     ret
 __invlpga ENDP
 
-_TEXT ENDS
 END
