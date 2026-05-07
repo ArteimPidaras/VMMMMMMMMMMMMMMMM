@@ -7,6 +7,15 @@
 #define SVM_EXIT_MSR          0x7C
 #define SVM_EXIT_VMMCALL      0x81
 #define SVM_EXIT_NPF          0x400
+#define SVM_EXIT_RDTSC        0x6E
+#define SVM_EXIT_DR_READ      0x20
+#define SVM_EXIT_DR_WRITE     0x30
+#define SVM_EXIT_CR_READ      0x00
+#define SVM_EXIT_CR_WRITE     0x10
+
+#define SVM_INTERCEPT_WORD0   0
+#define SVM_INTERCEPT_WORD1   1
+#define SVM_INTERCEPT_WORD2   2
 #define SVM_INTERCEPT_WORD3   3
 #define SVM_INTERCEPT_WORD4   4
 
@@ -16,6 +25,8 @@
 #define SVM_INTERCEPT_MSR     (1u << 28)
 
 #define SVM_INTERCEPT_VMMCALL (1u << 1)
+#define SVM_INTERCEPT_RDTSC   (1u << 14)
+#define SVM_INTERCEPT_DR_ALL  0xFFFF
 
 #define SVM_NESTED_CTL_NP_ENABLE 0x1
 #define HV_STATUS_BASE                ((NTSTATUS)0xC0F00000)
@@ -46,8 +57,8 @@
 #define MSR_VM_HSAVE_PA       0xC0010117
 
 //
-// ÂÀÆÍÎ: ñòðóêòóðà çäåñü ÍÅ ÎÁÚßÂËßÅÒÑß!
-// Ìû äåëàåì òîëüêî forward declaration
+// ï¿½ï¿½ï¿½ï¿½ï¿½: ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½!
+// ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ forward declaration
 //
 
 struct _VCPU;

@@ -78,6 +78,7 @@ typedef struct _VCPU
     // Secret Key for Hypercall Verification (PART 3.10)
     UINT64 HypercallSecretKey;
 
+    // PHASE 1.5: Thread Context Safety - Guest Register Backup
     struct
     {
         UINT64 Rbx;
@@ -95,6 +96,44 @@ typedef struct _VCPU
         UINT64 R14;
         UINT64 R15;
     } GuestRegs;
+
+    // PHASE 1.1: Process Context Awareness
+    struct
+    {
+        UINT64 TargetCr3;
+        UINT16 TargetAsid;
+        BOOLEAN MonitoringActive;
+        UINT64 CurrentGuestCr3;
+    } ProcessContext;
+
+    // PHASE 3.3: Debug Register Masking
+    struct
+    {
+        UINT64 Dr0;
+        UINT64 Dr1;
+        UINT64 Dr2;
+        UINT64 Dr3;
+        UINT64 Dr6;
+        UINT64 Dr7;
+        BOOLEAN Masked;
+    } DebugRegs;
+
+    // PHASE 3.2: TSC Timing Stealth
+    struct
+    {
+        UINT64 BaseOffset;
+        UINT64 LastGuestTsc;
+        UINT64 AccumulatedOverhead;
+        BOOLEAN InterceptActive;
+    } TscStealth;
+
+    // PHASE 3.6: Kernel/User Mode Tracking
+    struct
+    {
+        BOOLEAN InKernelMode;
+        UINT64 LastSyscallRip;
+        UINT64 SyscallCount;
+    } ModeTracking;
 
     BOOLEAN Active;
 

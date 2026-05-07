@@ -190,52 +190,131 @@ BOOLEAN HookNptHandleFault(VCPU* V, UINT64 faultingGpa)
 
 
 
-UINT64 HookVmmcallDispatch(VCPU* V, UINT64 code, UINT64 a1, UINT64 a2, UINT64 a3)
+UINT64 HookVmmcallDispatch(VCPU* V, UINT64 code, UINT64 a1, UINT64 a2, UINT64 a3, UINT64 secretKey)
 {
-    // PART 3.10: Hypercall Verification - Secret Key in RCX
-    UINT64 secretKey = V->GuestRegs.Rcx;
-    if (secretKey != V->HypercallSecretKey && code >= 0x400)
+    // PHASE 3.6: VMMCALL Secret Key Verification
+    if (code >= 0x400 && secretKey != V->HypercallSecretKey)
     {
-        DbgPrint("[HV] Hypercall rejected: invalid secret key\n");
+        DbgPrint("[HV] Hypercall rejected: invalid secret key (got 0x%llX)\n", secretKey);
         return 0xDEADC0DE;
     }
 
     switch (code)
     {
     // ========================================================================
-    // PART 4.3: Manual Mapper Bridge - Shadow Page Installation
+    // PHASE 1.1: CR3 Tracking and Process Management
     // ========================================================================
-    case 0x400:   // Install shadow page (a1 = GPA, a2 = Original HPA, a3 = Injected HPA)
+    case 0x400:   // Set target process CR3 (a1 = CR3, a2 = ASID)
     {
-        UINT64 targetCr3 = V->Npt.TargetCr3;
-        UINT16 asid = V->Npt.TargetAsid;
-        
+        V->ProcessContext.TargetCr3 = a1 & ~0xFFFULL;
+        V->ProcessContext.TargetAsid = (UINT16)(a2 ? a2 : 0x2);
+        V->ProcessContext.MonitoringActive = TRUE;
+
+        // Update NPT state
+        NptSetTargetProcess(&V->Npt, V->ProcessContext.TargetCr3, V->ProcessContext.TargetAsid);
+
+        DbgPrint("[HV] Target process set: CR3=0x%llX ASID=%u\n",
+            V->ProcessContext.TargetCr3, V->ProcessContext.TargetAsid);
+        return 1;
+    }
+
+    case 0x401:   // Install shadow page (a1 = GPA, a2 = Original HPA, a3 = Injected HPA)
+    {
+        UINT64 targetCr3 = V->ProcessContext.TargetCr3;
+        UINT16 asid = V->ProcessContext.TargetAsid;
+
         NTSTATUS status = NptShadowPageInstall(&V->Npt, a1, a2, a3, targetCr3, asid);
         return NT_SUCCESS(status) ? 1 : 0;
     }
 
-    case 0x401:   // Remove shadow page (a1 = GPA)
+    case 0x402:   // Remove shadow page (a1 = GPA)
     {
         NptShadowPageRemove(&V->Npt, a1);
-        return 1;
-    }
-
-    case 0x402:   // Set target process (a1 = CR3, a2 = ASID)
-    {
-        NptSetTargetProcess(&V->Npt, a1, (UINT16)a2);
         return 1;
     }
 
     case 0x403:   // Set hypercall secret key (a1 = new key)
     {
         V->HypercallSecretKey = a1;
-        DbgPrint("[HV] Hypercall secret key updated\n");
+        DbgPrint("[HV] Hypercall secret key updated to 0x%llX\n", a1);
         return 1;
     }
 
     case 0x404:   // Query shadow page count
     {
         return V->Npt.ShadowPageCount;
+    }
+
+    case 0x405:   // Allocate hidden buffer (a1 = size)
+    {
+        if (V->Npt.HiddenBuffer)
+        {
+            DbgPrint("[HV] Hidden buffer already allocated\n");
+            return 0;
+        }
+
+        SIZE_T size = (SIZE_T)a1;
+        if (size == 0 || size > 0x100000)  // Max 1MB
+        {
+            DbgPrint("[HV] Invalid hidden buffer size: 0x%llX\n", (UINT64)size);
+            return 0;
+        }
+
+        PHYSICAL_ADDRESS low = { 0 };
+        PHYSICAL_ADDRESS high = { .QuadPart = ~0ULL };
+        PHYSICAL_ADDRESS skip = { 0 };
+
+        V->Npt.HiddenBuffer = MmAllocateContiguousMemorySpecifyCache(
+            size, low, high, skip, MmCached);
+
+        if (!V->Npt.HiddenBuffer)
+        {
+            DbgPrint("[HV] Failed to allocate hidden buffer\n");
+            return 0;
+        }
+
+        RtlZeroMemory(V->Npt.HiddenBuffer, size);
+        V->Npt.HiddenBufferPa = MmGetPhysicalAddress(V->Npt.HiddenBuffer);
+        V->Npt.HiddenBufferSize = size;
+
+        DbgPrint("[HV] Hidden buffer allocated: VA=0x%p PA=0x%llX Size=0x%llX\n",
+            V->Npt.HiddenBuffer, V->Npt.HiddenBufferPa.QuadPart, (UINT64)size);
+
+        return V->Npt.HiddenBufferPa.QuadPart;
+    }
+
+    case 0x406:   // Free hidden buffer
+    {
+        if (V->Npt.HiddenBuffer)
+        {
+            MmFreeContiguousMemory(V->Npt.HiddenBuffer);
+            V->Npt.HiddenBuffer = NULL;
+            V->Npt.HiddenBufferPa.QuadPart = 0;
+            V->Npt.HiddenBufferSize = 0;
+            DbgPrint("[HV] Hidden buffer freed\n");
+            return 1;
+        }
+        return 0;
+    }
+
+    case 0x407:   // Enable/Disable debug register masking (a1 = 1/0)
+    {
+        V->DebugRegs.Masked = (a1 != 0);
+        DbgPrint("[HV] Debug register masking: %s\n", V->DebugRegs.Masked ? "ENABLED" : "DISABLED");
+        return 1;
+    }
+
+    case 0x408:   // Enable/Disable TSC intercept (a1 = 1/0)
+    {
+        V->TscStealth.InterceptActive = (a1 != 0);
+        DbgPrint("[HV] TSC intercept: %s\n", V->TscStealth.InterceptActive ? "ENABLED" : "DISABLED");
+        return 1;
+    }
+
+    case 0x409:   // Query process context info
+    {
+        // Return target CR3 in RAX, ASID in high 16 bits
+        return V->ProcessContext.TargetCr3 | ((UINT64)V->ProcessContext.TargetAsid << 48);
     }
 
     // ========================================================================
@@ -341,6 +420,18 @@ UINT64 HookVmmcallDispatch(VCPU* V, UINT64 code, UINT64 a1, UINT64 a2, UINT64 a3
         PROCESS_DETAILS details = { 0 };
         if (NT_SUCCESS(ProcessQueryByPid((HANDLE)a1, &details)))
             return details.DirectoryTableBase;
+        return 0;
+    }
+
+    case 0x323: // PHASE 1.7: Find module base (a1 = CR3, a2 = unused, a3 = unused)
+    {
+        UINT64 moduleBase = 0;
+        NTSTATUS status = ProcessFindModuleBase(a1, "stalcraft.exe", &moduleBase);
+        if (NT_SUCCESS(status))
+        {
+            DbgPrint("[HV] Module base found: 0x%llX\n", moduleBase);
+            return moduleBase;
+        }
         return 0;
     }
 
