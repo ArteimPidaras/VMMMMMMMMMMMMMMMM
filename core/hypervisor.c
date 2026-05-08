@@ -140,7 +140,12 @@ static VOID HvHandleVmmcall(VCPU* V)
     // PHASE 3.6: VMMCALL Secret Key - R10 contains the handshake key
     UINT64 secretKey = V->GuestRegs.R10;
 
+    DbgPrint("[HV] VMMCALL received: Code=0x%llX, Args=[0x%llX, 0x%llX, 0x%llX], Key=0x%llX\n", 
+             code, arg1, arg2, arg3, secretKey);
+
     UINT64 result = HookVmmcallDispatch(V, code, arg1, arg2, arg3, secretKey);
+
+    DbgPrint("[HV] VMMCALL 0x%llX completed with result: 0x%llX\n", code, result);
 
     s->Rax = result;
 
