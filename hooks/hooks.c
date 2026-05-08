@@ -192,10 +192,15 @@ BOOLEAN HookNptHandleFault(VCPU* V, UINT64 faultingGpa)
 
 UINT64 HookVmmcallDispatch(VCPU* V, UINT64 code, UINT64 a1, UINT64 a2, UINT64 a3, UINT64 secretKey)
 {
+    DbgPrint("[HV] HookVmmcallDispatch: Code=0x%llX, SecretKey=0x%llX, Expected=0x%llX\n", 
+             code, secretKey, V->HypercallSecretKey);
+    
     // PHASE 3.6: VMMCALL Secret Key Verification
     if (code >= 0x400 && secretKey != V->HypercallSecretKey)
     {
-        DbgPrint("[HV] Hypercall rejected: invalid secret key (got 0x%llX)\n", secretKey);
+        DbgPrint("[HV] Hypercall rejected: invalid secret key (got 0x%llX, expected 0x%llX)\n", 
+                 secretKey, V->HypercallSecretKey);
+        DbgPrint("[HV] Code 0x%llX requires authentication\n", code);
         return 0xDEADC0DE;
     }
 
@@ -442,6 +447,49 @@ UINT64 HookVmmcallDispatch(VCPU* V, UINT64 code, UINT64 a1, UINT64 a2, UINT64 a3
     case 0x301:
         HookRemoveSyscall();
         return TRUE;
+
+    // ========================================================================
+    // DLL Injection Hypercalls (0x500-0x507)
+    // ========================================================================
+    case 0x500:   // VMMCALL_ATTACH_PROCESS
+    case 0x501:   // VMMCALL_INSTALL_NPT_HOOK  
+    case 0x502:   // VMMCALL_REMOVE_NPT_HOOK
+    case 0x503:   // VMMCALL_INJECT_DLL
+    case 0x504:   // VMMCALL_REMOVE_DLL
+    {
+        DbgPrint("[HV] DLL Injection hypercall received: 0x%llX\n", code);
+        DbgPrint("[HV] Args: 0x%llX, 0x%llX, 0x%llX\n", a1, a2, a3);
+        
+        extern UINT64 HandleHypercallExtended(VCPU* Vcpu, UINT64 Code, UINT64 Arg1, UINT64 Arg2, UINT64 Arg3);
+        UINT64 result = HandleHypercallExtended(V, code, a1, a2, a3);
+        
+        DbgPrint("[HV] DLL Injection hypercall 0x%llX returned: 0x%llX\n", code, result);
+        return result;
+    }
+
+    case 0x505:   // VMMCALL_QUERY_CR3_CHANGES - Query total CR3 change count
+    {
+        extern UINT32 ProcessGetCr3ChangeCount(void);
+        UINT32 changeCount = ProcessGetCr3ChangeCount();
+        DbgPrint("[HV] CR3 change count query: %u changes\n", changeCount);
+        return (UINT64)changeCount;
+    }
+
+    case 0x506:   // VMMCALL_QUERY_ANTICHEAT_STATUS - Query anti-cheat detection status
+    {
+        extern BOOLEAN ProcessIsAntiCheatDetected(void);
+        BOOLEAN detected = ProcessIsAntiCheatDetected();
+        DbgPrint("[HV] Anti-cheat status query: %s\n", detected ? "DETECTED" : "Not Detected");
+        return detected ? 1 : 0;
+    }
+
+    case 0x507:   // VMMCALL_REINJECT_ALL_CR3 - Re-inject on all known CR3 values
+    {
+        extern NTSTATUS ProcessReinjectOnAllCr3s(VCPU* Vcpu);
+        NTSTATUS status = ProcessReinjectOnAllCr3s(V);
+        DbgPrint("[HV] Multi-CR3 re-injection: %s\n", NT_SUCCESS(status) ? "SUCCESS" : "FAILED");
+        return NT_SUCCESS(status) ? 1 : 0;
+    }
 
     default:
         return 0xDEADBEEF;

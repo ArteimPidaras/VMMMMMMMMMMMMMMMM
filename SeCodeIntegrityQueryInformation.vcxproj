@@ -131,6 +131,8 @@
   <ItemGroup>
     <ClCompile Include="src\communication\communication.c" />
     <ClCompile Include="src\communication\hypercall_attach.c" />
+    <ClCompile Include="src\communication\ioctl_interface.c" />
+    <ClCompile Include="src\communication\shared_memory.c" />
     <ClCompile Include="src\core\driver.c" />
     <ClCompile Include="src\core\vmexit_handler_npt.c" />
     <ClCompile Include="src\memory\guest_mem.c" />
@@ -149,6 +151,9 @@
     <ClCompile Include="src\core\translator.c" />
     <ClCompile Include="src\injection\shellcode_payload.c" />
     <ClCompile Include="src\injection\direct_inject.c" />
+    <ClCompile Include="src\injection\dll_loader.c" />
+    <ClCompile Include="src\injection\embedded_dll.c" />
+    <ClCompile Include="src\process\guest_memory.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\communication.h" />
@@ -169,6 +174,7 @@
     <ClInclude Include="include\vcpu.h" />
     <ClInclude Include="include\vmcb.h" />
     <ClInclude Include="include\injection.h" />
+    <ClInclude Include="include\dll_injection.h" />
   </ItemGroup>
   <ItemGroup>
     <MASM Include="asm\shadow_idt.asm">

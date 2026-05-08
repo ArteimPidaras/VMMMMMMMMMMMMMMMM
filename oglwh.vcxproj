@@ -151,8 +151,8 @@
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableUAC>false</EnableUAC>
-      <AdditionalLibraryDirectories>C:\Users\main\Desktop\Stalcraft-wallhack-glow-esp-master\Detours-4.0.1\lib.X64;C:\Users\main\Desktop\Stalcraft-wallhack-glow-esp-master\lib;C:\Users\main\Desktop\Blackbone-master\build\x64\Release;C:\Users\main\Desktop\Stalcraft-wallhack-glow-esp-master;C:\Users\main\Desktop\Stalcraft-wallhack-glow-esp-master\oglwh\lib;C:\Users\gaming\Desktop\oglwh\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>detours.lib;glew32.lib;glfw3dll.lib;opengl32.lib;libMinHook.x64.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>f:\svm-vmm-main\DLL\Detours-4.0.1\lib.X64;f:\svm-vmm-main\DLL\lib;C:\Users\main\Desktop\Stalcraft-wallhack-glow-esp-master\Detours-4.0.1\lib.X64;C:\Users\main\Desktop\Stalcraft-wallhack-glow-esp-master\lib;C:\Users\main\Desktop\Blackbone-master\build\x64\Release;C:\Users\main\Desktop\Stalcraft-wallhack-glow-esp-master;C:\Users\main\Desktop\Stalcraft-wallhack-glow-esp-master\oglwh\lib;C:\Users\gaming\Desktop\oglwh\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>detours.lib;glew32.lib;glfw3dll.lib;opengl32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
